@@ -18,6 +18,7 @@ package io.netty.channel;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.util.AbstractConstant;
 import io.netty.util.ConstantPool;
+import io.netty.util.NetUtil;
 import io.netty.util.internal.ObjectUtil;
 
 import java.net.InetAddress;
@@ -115,6 +116,16 @@ public class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
     public static final ChannelOption<Integer> SO_RCVBUF = valueOf("SO_RCVBUF");
     public static final ChannelOption<Boolean> SO_REUSEADDR = valueOf("SO_REUSEADDR");
     public static final ChannelOption<Integer> SO_LINGER = valueOf("SO_LINGER");
+    /**
+     * 对应的是 TCP/IP 协议，listen 函数中 backlog 参数，用来初始化服务端可连接队列, backlog默认通过
+     * {@link NetUtil#SOMAXCONN } 指定。
+     * <p>listen(int socket, int backlog)
+     * <p>The backlog parameter defines the maximum length for the queue of pending
+     *      connections.  If a connection request arrives with the queue full, the
+     *      client may receive an error with an indication of ECONNREFUSED.
+     *      Alternatively, if the underlying protocol supports retransmission, the
+     *      request may be ignored so that retries may succeed.
+     */
     public static final ChannelOption<Integer> SO_BACKLOG = valueOf("SO_BACKLOG");
     public static final ChannelOption<Integer> SO_TIMEOUT = valueOf("SO_TIMEOUT");
 

@@ -42,6 +42,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 /**
  * The default {@link ChannelPipeline} implementation.  It is usually created
  * by a {@link Channel} implementation when the {@link Channel} is created.
+ * @see AbstractChannel#AbstractChannel(io.netty.channel.Channel)
  */
 public class DefaultChannelPipeline implements ChannelPipeline {
 

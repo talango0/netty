@@ -57,6 +57,10 @@ public final class HttpHelloWorldServer {
              .handler(new LoggingHandler(LogLevel.INFO))
              .childHandler(new HttpHelloWorldServerInitializer(sslCtx));
 
+            // 1. ServerBootstrap will create a new channel when calling bind(...). This channel will accept child
+            // handlers once the bind is successful.
+            // 2. Accept new connections and create child channels that will server an accepted connection
+            // 3. Channel for an accepted connection.
             Channel ch = b.bind(PORT).sync().channel();
 
             System.err.println("Open your web browser and navigate to " +

@@ -121,6 +121,11 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     /**
      * Set the {@link ChannelHandler} which is used to serve the request for the {@link Channel}'s.
+     * <p/>
+     * The difference is between handler(...) and childHandler(...) is that handler(...) allows to add
+     * a handler which is processed by the "accepting" ServerChannel, while childHandler(...) allows to add
+     * a handler which is processed by "accepted" Channel. The accepted Channel represents here a bound
+     * socket to a remote peer.
      */
     public ServerBootstrap childHandler(ChannelHandler childHandler) {
         this.childHandler = ObjectUtil.checkNotNull(childHandler, "childHandler");
@@ -248,9 +253,16 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         }
     }
 
+    /**
+     * 意味着可以从一个已经配置好的 bootstrap 进行深拷贝获取一个新的bootstrap，但是clone出来的对象对 EventloopGroup 进行了浅拷贝，
+     * 这意味着在所有被clone 的 channel 对象共享 EventLoopGroup 对象。这样做的原因在于一般情况被 clone 出来的 bootstrap 存活时间
+     * 比较短。
+     * @return
+     */
     @Override
     @SuppressWarnings("CloneDoesntCallSuperClone")
     public ServerBootstrap clone() {
+        //clone 出来的对象共享
         return new ServerBootstrap(this);
     }
 

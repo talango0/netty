@@ -95,6 +95,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             }
         }
 
+        // 设置 epoll 空轮巡bug判断的出发阈值
         int selectorAutoRebuildThreshold = SystemPropertyUtil.getInt("io.netty.selectorAutoRebuildThreshold", 512);
         if (selectorAutoRebuildThreshold < MIN_PREMATURE_SELECTOR_RETURNS) {
             selectorAutoRebuildThreshold = 0;
@@ -170,15 +171,17 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     private SelectorTuple openSelector() {
         final Selector unwrappedSelector;
         try {
+            // 获取系统对应的提供的 selector 实现（epoll-linux， poll-macos）
             unwrappedSelector = provider.openSelector();
         } catch (IOException e) {
             throw new ChannelException("failed to open a new selector", e);
         }
-
+        //是否禁止了 selectKey 的优化
         if (DISABLE_KEY_SET_OPTIMIZATION) {
             return new SelectorTuple(unwrappedSelector);
         }
 
+        // 家在 sun.nio.ch.SelectorImpl 的 class 信息
         Object maybeSelectorImplClass = AccessController.doPrivileged(new PrivilegedAction<Object>() {
             @Override
             public Object run() {
@@ -193,6 +196,8 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             }
         });
 
+        // 如果是异常，直接不进行下一步的 selector 优化
+        // 如果是 Class 且是系统所提供的 selector 的 class，则进行 Netty 的 selector 优化
         if (!(maybeSelectorImplClass instanceof Class) ||
             // ensure the current selector implementation is what we can instrument.
             !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
@@ -204,15 +209,19 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
 
         final Class<?> selectorImplClass = (Class<?>) maybeSelectorImplClass;
+        // 使用Netty的自定义实现的 selectKeySet 本质是一个数组
         final SelectedSelectionKeySet selectedKeySet = new SelectedSelectionKeySet();
 
+        // 进行相关优化措施
         Object maybeException = AccessController.doPrivileged(new PrivilegedAction<Object>() {
             @Override
             public Object run() {
                 try {
+                    // 利用反射获取 selectedKeys 字段信息
                     Field selectedKeysField = selectorImplClass.getDeclaredField("selectedKeys");
                     Field publicSelectedKeysField = selectorImplClass.getDeclaredField("publicSelectedKeys");
 
+                    // 如果是JDK9且存在 Unsafe，则使用原本的 sun.misc.Unsafe 实现Field 的替换
                     if (PlatformDependent.javaVersion() >= 9 && PlatformDependent.hasUnsafe()) {
                         // Let us try to use sun.misc.Unsafe to replace the SelectionKeySet.
                         // This allows us to also do this in Java9+ without any extra flags.
@@ -230,6 +239,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                         // We could not retrieve the offset, lets try reflection as last-resort.
                     }
 
+                    //否则使用反射进行操作，替换待优化的Field
                     Throwable cause = ReflectionUtil.trySetAccessible(selectedKeysField, true);
                     if (cause != null) {
                         return cause;
@@ -239,6 +249,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                         return cause;
                     }
 
+                    // 进行相关的 selectedKeys 替换，替换为 Netty 的实现
                     selectedKeysField.set(unwrappedSelector, selectedKeySet);
                     publicSelectedKeysField.set(unwrappedSelector, selectedKeySet);
                     return null;
@@ -250,6 +261,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             }
         });
 
+        // 如果在优化过程中出现错误，则直接不做优化
         if (maybeException instanceof Exception) {
             selectedKeys = null;
             Exception e = (Exception) maybeException;
@@ -258,6 +270,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         }
         selectedKeys = selectedKeySet;
         logger.trace("instrumented a special java.util.Set into: {}", unwrappedSelector);
+        // 返回已经优化过的 selector，由于已将 selectorKeySet 替换进行了 JDK 的selector 实现中，因此所有的操作都会反映在selectedKeySet中
         return new SelectorTuple(unwrappedSelector,
                                  new SelectedSelectionKeySetSelector(unwrappedSelector, selectedKeySet));
     }

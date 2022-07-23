@@ -150,6 +150,7 @@ public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparabl
     /**
      * Returns the {@link ChannelFuture} which will be notified when this
      * channel is closed.  This method always returns the same future instance.
+     * <p>当channel 关闭时，返回的 ChannelFuture 会被通知
      */
     ChannelFuture closeFuture();
 
