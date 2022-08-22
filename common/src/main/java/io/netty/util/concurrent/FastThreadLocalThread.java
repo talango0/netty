@@ -19,6 +19,7 @@ import io.netty.util.internal.InternalThreadLocalMap;
 import io.netty.util.internal.UnstableApi;
 
 /**
+ * Netty 提供的特殊的 线程，能够提供快速访问 FastThreadLocal，
  * A special {@link Thread} that provides fast access to {@link FastThreadLocal} variables.
  */
 public class FastThreadLocalThread extends Thread {
