@@ -27,6 +27,10 @@ import java.net.SocketAddress;
 import java.util.Map;
 
 /**
+ * AbstractBootstrapConfig 的子类有两个实现，分别是客户端的（BootstrapConfig）和服务端的（ServerBootstrapConfig）。
+ * 暴露抽象启动类的配置，抽象启动器 AbstractBootstrap<B,C> 的泛型是成对出现的，分别表示 通道 C及对应的启动器 B、常见的
+ * AbstractBootstrap 的子类有 Bootstrap （继承了AbstractBootstrapConfig<Bootstrap, Channel>） 和 ServerBootstrap
+ * (继承了AbstractBootstrapConfig<ServerBootstrap, ServerChannel>)
  * Exposes the configuration of an {@link AbstractBootstrap}.
  */
 public abstract class AbstractBootstrapConfig<B extends AbstractBootstrap<B, C>, C extends Channel> {

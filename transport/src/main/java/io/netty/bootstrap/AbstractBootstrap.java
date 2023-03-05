@@ -380,6 +380,8 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     /**
+     * 返回可以获取当前 bootstrap 配置的抽象启动配置类 AbstractBootstrapConfig, AbstractBootstrapConfig 的子类有两个实现，分别是客户端
+     * 的（BootstrapConfig）和服务端的（ServerBootstrapConfig）。
      * Returns the {@link AbstractBootstrapConfig} object that can be used to obtain the current config
      * of the bootstrap.
      */

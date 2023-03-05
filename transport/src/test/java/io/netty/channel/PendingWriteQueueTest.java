@@ -25,6 +25,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.Matchers.*;
@@ -259,9 +260,9 @@ public class PendingWriteQueueTest {
         assertTrue(promise3.isDone());
         assertTrue(promise3.isSuccess());
         assertTrue(channel.finish());
-        assertEquals(1L, channel.readOutbound());
-        assertEquals(2L, channel.readOutbound());
-        assertEquals(3L, channel.readOutbound());
+        assertEquals(Optional.of(1L), channel.readOutbound());
+        assertEquals(Optional.of(2L), channel.readOutbound());
+        assertEquals(Optional.of(3L), channel.readOutbound());
     }
 
     @Test
@@ -284,8 +285,8 @@ public class PendingWriteQueueTest {
         assertTrue(channel.finish());
         assertTrue(promise.isDone());
         assertTrue(promise.isSuccess());
-        assertEquals(1L, channel.readOutbound());
-        assertEquals(2L, channel.readOutbound());
+        assertEquals(Optional.of(1L), channel.readOutbound());
+        assertEquals(Optional.of(2L), channel.readOutbound());
     }
 
     @Test
@@ -354,8 +355,8 @@ public class PendingWriteQueueTest {
         assertTrue(promise2.isSuccess());
         assertTrue(channel.finish());
 
-        assertEquals(1L, channel.readOutbound());
-        assertEquals(2L, channel.readOutbound());
+        assertEquals(Optional.of(1L), channel.readOutbound());
+        assertEquals(Optional.of(2L), channel.readOutbound());
         assertNull(channel.readOutbound());
         assertNull(channel.readInbound());
     }
