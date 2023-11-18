@@ -93,6 +93,8 @@ public class HashedWheelTimer implements Timer {
             AtomicIntegerFieldUpdater.newUpdater(HashedWheelTimer.class, "workerState");
 
     private final ResourceLeakTracker<HashedWheelTimer> leak;
+    // Worker 线程是一个 bucket 一个 bucket 顺次处理的，所以，即使有些任务执行时间超过了 100ms，
+    // “霸占”了之后好几个 bucket 的处理时间，也没关系，这些任务并不会被漏掉。但是有可能被延迟执行，毕竟工作线程是单线程。
     private final Worker worker = new Worker();
     private final Thread workerThread;
 
@@ -250,6 +252,7 @@ public class HashedWheelTimer implements Timer {
 
         // Normalize ticksPerWheel to power of two and initialize the wheel.
         wheel = createWheel(ticksPerWheel);
+        // 掩码，用来取模
         mask = wheel.length - 1;
 
         // Convert tickDuration to nanos.
@@ -413,17 +416,23 @@ public class HashedWheelTimer implements Timer {
                 + "timeouts (" + maxPendingTimeouts + ")");
         }
 
+        // 如果是第一个提交的任务，他会负责工作线程的启动。
         start();
 
         // Add the timeout to the timeout queue which will be processed on the next tick.
         // During processing all the queued HashedWheelTimeouts will be added to the correct HashedWheelBucket.
+        // deadline是一个相对时间，相对于HashWheelTimer的启动时间
         long deadline = System.nanoTime() + unit.toNanos(delay) - startTime;
 
         // Guard against overflow.
         if (delay > 0 && deadline < 0) {
             deadline = Long.MAX_VALUE;
         }
+        // timeout 实例，一个上层依赖timer，一个下层依赖task，另一个是任务到期时间
         HashedWheelTimeout timeout = new HashedWheelTimeout(this, task, deadline);
+        // 放到 timeouts 队列中
+        /* 这里的优先队列是MPSC（Multiple Process Single Consumer）的队列，刚好适用于这里的多个生产线程
+        * 当个消费线程的场景。在 Dubbo 中，使用的队列是 LinkedBlockingQueue */
         timeouts.add(timeout);
         return timeout;
     }
@@ -447,6 +456,7 @@ public class HashedWheelTimer implements Timer {
     private final class Worker implements Runnable {
         private final Set<Timeout> unprocessedTimeouts = new HashSet<Timeout>();
 
+        // tick 过的次数
         private long tick;
 
         @Override
@@ -465,10 +475,13 @@ public class HashedWheelTimer implements Timer {
                 final long deadline = waitForNextTick();
                 if (deadline > 0) {
                     int idx = (int) (tick & mask);
+                    // 处理一下已经取消的任务
                     processCancelledTasks();
                     HashedWheelBucket bucket =
                             wheel[idx];
+                    // 将队列中所有任务转移到相应的 buckets 中。
                     transferTimeoutsToBuckets();
+                    // 执行进入到这个buket中的任务。
                     bucket.expireTimeouts(deadline);
                     tick++;
                 }
@@ -478,6 +491,7 @@ public class HashedWheelTimer implements Timer {
             for (HashedWheelBucket bucket: wheel) {
                 bucket.clearTimeouts(unprocessedTimeouts);
             }
+            // 将任务队列中的任务也添加到 unprocessedTimeouts 中
             for (;;) {
                 HashedWheelTimeout timeout = timeouts.poll();
                 if (timeout == null) {
@@ -500,6 +514,7 @@ public class HashedWheelTimer implements Timer {
                     break;
                 }
                 if (timeout.state() == HashedWheelTimeout.ST_CANCELLED) {
+                    // 该任务刚刚被取消了
                     // Was cancelled in the meantime.
                     continue;
                 }
@@ -510,6 +525,8 @@ public class HashedWheelTimer implements Timer {
                 final long ticks = Math.max(calculated, tick); // Ensure we don't schedule for past.
                 int stopIndex = (int) (ticks & mask);
 
+                // 单个bucket，是由 HashedWheelTimeout 实例组成的一个链表
+                // 因为是单线程操作，不存在并发，所以代码简单
                 HashedWheelBucket bucket = wheel[stopIndex];
                 bucket.addTimeout(timeout);
             }
@@ -533,6 +550,12 @@ public class HashedWheelTimer implements Timer {
         }
 
         /**
+         * 假设 tickDuration = 100ms
+         * 我们用的都是相对时间，锁哦咦
+         *  第一次进来的时候，工作线程会在100ms的时候返回，返回值是 100*10^6
+         *  第二次进来的时候，工作线程会在200ms的时候返回，一次类推
+         * 另外就是注意极端情况，比如比如第二次进来的时候，由于被前面任务阻塞，导致进来的时候就已经250ms了，
+         *  那么，一进入这个方法就要返回，，返回值是250ms，而不是200ms
          * calculate goal nanoTime from startTime and current tick number,
          * then wait until that goal has been reached.
          * @return Long.MIN_VALUE if received a shutdown request,
@@ -549,6 +572,7 @@ public class HashedWheelTimer implements Timer {
                     if (currentTime == Long.MIN_VALUE) {
                         return -Long.MAX_VALUE;
                     } else {
+                        // 这里是出口，所以返回值是当前时间(相对时间)
                         return currentTime;
                     }
                 }
@@ -568,6 +592,7 @@ public class HashedWheelTimer implements Timer {
                 try {
                     Thread.sleep(sleepTimeMs);
                 } catch (InterruptedException ignored) {
+                    // 如果 timer 已经 shutdown，那么返回 Long.MIN_VALUE
                     if (WORKER_STATE_UPDATER.get(HashedWheelTimer.this) == WORKER_STATE_SHUTDOWN) {
                         return Long.MIN_VALUE;
                     }
@@ -738,12 +763,14 @@ public class HashedWheelTimer implements Timer {
         public void expireTimeouts(long deadline) {
             HashedWheelTimeout timeout = head;
 
+            // 处理链表上的所有 timeout 实例
             // process all timeouts
             while (timeout != null) {
                 HashedWheelTimeout next = timeout.next;
                 if (timeout.remainingRounds <= 0) {
                     next = remove(timeout);
                     if (timeout.deadline <= deadline) {
+                        // 这行代码负责执行具体的任务
                         timeout.expire();
                     } else {
                         // The timeout was placed into a wrong slot. This should never happen.
@@ -753,6 +780,7 @@ public class HashedWheelTimer implements Timer {
                 } else if (timeout.isCancelled()) {
                     next = remove(timeout);
                 } else {
+                    // 轮次减 1
                     timeout.remainingRounds --;
                 }
                 timeout = next;

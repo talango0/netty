@@ -101,10 +101,13 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     private volatile int handlerState = INIT;
 
+    // 这里先是绑定 pipeline 和 executor，不过这里的 executor 传入是 null，每个处理器节点都会绑定一个 Ececutor ，
+    // 如果当前处理器的 executor 为空则直接使用 channel 的 Executor 来执行当前处理器节点里的处理器方法。
     AbstractChannelHandlerContext(DefaultChannelPipeline pipeline, EventExecutor executor,
                                   String name, Class<? extends ChannelHandler> handlerClass) {
         this.name = ObjectUtil.checkNotNull(name, "name");
         this.pipeline = pipeline;
+        // 每个处理器节点都会绑定一个executor
         this.executor = executor;
         this.executionMask = mask(handlerClass);
         // Its ordered if its driven by the EventLoop or the given Executor is an instanceof OrderedEventExecutor.
@@ -784,6 +787,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         final AbstractChannelHandlerContext next = findContextOutbound(flush ?
                 (MASK_WRITE | MASK_FLUSH) : MASK_WRITE);
         final Object m = pipeline.touch(msg, next);
+        // executor 为 NioEventLoop类型对象
         EventExecutor executor = next.executor();
         if (executor.inEventLoop()) {
             if (flush) {
@@ -792,7 +796,9 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
                 next.invokeWrite(m, promise);
             }
         } else {
+            // 生成 WriteTask
             final WriteTask task = WriteTask.newInstance(next, m, promise, flush);
+            // 事件执行器执行任务 WriteTask
             if (!safeExecute(executor, task, promise, m, !flush)) {
                 // We failed to submit the WriteTask. We need to cancel it so we decrement the pending bytes
                 // and put it back in the Recycler for re-use later.

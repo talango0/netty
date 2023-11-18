@@ -40,9 +40,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * {@link Bootstrap} sub-class which allows easy bootstrap of {@link ServerChannel}
- *
  */
-public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerChannel> {
+public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerChannel>{
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(ServerBootstrap.class);
 
@@ -54,7 +53,8 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
     private volatile EventLoopGroup childGroup;
     private volatile ChannelHandler childHandler;
 
-    public ServerBootstrap() { }
+    public ServerBootstrap() {
+    }
 
     private ServerBootstrap(ServerBootstrap bootstrap) {
         super(bootstrap);
@@ -98,7 +98,8 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         synchronized (childOptions) {
             if (value == null) {
                 childOptions.remove(childOption);
-            } else {
+            }
+            else {
                 childOptions.put(childOption, value);
             }
         }
@@ -113,7 +114,8 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         ObjectUtil.checkNotNull(childKey, "childKey");
         if (value == null) {
             childAttrs.remove(childKey);
-        } else {
+        }
+        else {
             childAttrs.put(childKey, value);
         }
         return this;
@@ -134,11 +136,16 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     @Override
     void init(Channel channel) {
+        // 获取serverBootstrap 的 options 属性，将 options 属性设置到channel
         setChannelOptions(channel, newOptionsArray(), logger);
+        // 获取serverBootstrap 的 attrs 属性，将 attr 初始化到 channel
         setAttributes(channel, attrs0().entrySet().toArray(EMPTY_ATTRIBUTE_ARRAY));
 
+        // 获取 channel 的 pipeline
         ChannelPipeline p = channel.pipeline();
 
+        // 将serverBootstrap 中所有以 child 开头的属性写到局部变量
+        // 然后将他们初始化到 childChannel中
         final EventLoopGroup currentChildGroup = childGroup;
         final ChannelHandler currentChildHandler = childHandler;
         final Entry<ChannelOption<?>, Object>[] currentChildOptions;
@@ -147,7 +154,16 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         }
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = childAttrs.entrySet().toArray(EMPTY_ATTRIBUTE_ARRAY);
 
-        p.addLast(new ChannelInitializer<Channel>() {
+        //这里因为 ServerBootstrap 服务端是对用的有两个 EventLoopGroup，在服务端，
+        //parentGroup 是用于接收客户端的连接，在 parentGroup 接收到连接之后是将只是将当前转给了
+        //childGroup去处理后续操作，而 childGroup 是用来专门处理连接后的操作的，
+        //不关心 channel 的连接任务。这个其实就是 Netty-Server 的 Reactor 线程池模型的处理逻辑。
+
+
+        //将当前 channel 的 pipeline 中绑定一个初始化处理器 ChannelInitializer ，因为是抽象类，所以需要匿名实现 initChannel方法。
+        // 而这些主要的操作是处理 childGroup 里面的 channel 的初始化操作。
+        // 这里我只想主要讲一下这个连接处理器 ServerBootstrapAcceptor 主要做了什么
+        p.addLast(new ChannelInitializer<Channel>(){
             @Override
             public void initChannel(final Channel ch) {
                 final ChannelPipeline pipeline = ch.pipeline();
@@ -156,9 +172,12 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     pipeline.addLast(handler);
                 }
 
-                ch.eventLoop().execute(new Runnable() {
+                ch.eventLoop().execute(new Runnable(){
                     @Override
                     public void run() {
+                        // 将 ServerBootstrapAcceptor 处理器添加到 pipeline 中
+                        // ServerBootstrapAcceptor 处理器用于接收ServerBootstrap 中的属性值
+                        // 我们通常称之为连接处理器
                         pipeline.addLast(new ServerBootstrapAcceptor(
                                 ch, currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
                     }
@@ -180,7 +199,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         return this;
     }
 
-    private static class ServerBootstrapAcceptor extends ChannelInboundHandlerAdapter {
+    private static class ServerBootstrapAcceptor extends ChannelInboundHandlerAdapter{
 
         private final EventLoopGroup childGroup;
         private final ChannelHandler childHandler;
@@ -188,6 +207,9 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         private final Entry<AttributeKey<?>, Object>[] childAttrs;
         private final Runnable enableAutoReadTask;
 
+        // 构造器只是将ServerBootstrap中配置的 child 属性保存下来。
+        // 而之所以说这里时连接处理器，是因为当客户端连接发送到服务端时，这个处理器会接收客户端的连接并处理。
+        // 主要方法是在 channelRead 中实现。
         ServerBootstrapAcceptor(
                 final Channel channel, EventLoopGroup childGroup, ChannelHandler childHandler,
                 Entry<ChannelOption<?>, Object>[] childOptions, Entry<AttributeKey<?>, Object>[] childAttrs) {
@@ -201,7 +223,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
             // not be able to load the class because of the file limit it already reached.
             //
             // See https://github.com/netty/netty/issues/1328
-            enableAutoReadTask = new Runnable() {
+            enableAutoReadTask = new Runnable(){
                 @Override
                 public void run() {
                     channel.config().setAutoRead(true);
@@ -209,18 +231,34 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
             };
         }
 
+        /**
+         * 做两件事
+         * 1. childChannel。
+         * 2. 将成功从 client 连接过来的 channel 注册到 selector 上。
+         *
+         * 这里一直说子channel，就是因为这里注册的是两个 EventLoopGroup，
+         * 在 Server 端的处理上 netty 线程模型采用“服务端监听线程”和“IO线程”分离的方式。
+         * 所以这里 channelRead 方法就是在 client 端请求连接到 server 端时，
+         * 用于将当前连接的 IO 线程绑定到 childChannel 同时注册到 ChildGroup 中的 Selector 中。
+         *
+         * @param ctx
+         * @param msg
+         */
         @Override
         @SuppressWarnings("unchecked")
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            // msg 为客户端发送过来的数据，其为 NioSocketChannel， 即channel， childChannel
             final Channel child = (Channel) msg;
 
+            // 将来自于 ServerBootstrap 的child开头属性初始化到childChannel中（childHandler、childOptions、childAttrs）
             child.pipeline().addLast(childHandler);
 
             setChannelOptions(child, childOptions, logger);
             setAttributes(child, childAttrs);
 
             try {
-                childGroup.register(child).addListener(new ChannelFutureListener() {
+                // 将 childChannel 注册到 selector 需要注意的是，这里的 selector 与父 channel 所注册的selector 不是同一个。
+                childGroup.register(child).addListener(new ChannelFutureListener(){
                     @Override
                     public void operationComplete(ChannelFuture future) throws Exception {
                         if (!future.isSuccess()) {
@@ -257,6 +295,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
      * 意味着可以从一个已经配置好的 bootstrap 进行深拷贝获取一个新的bootstrap，但是clone出来的对象对 EventloopGroup 进行了浅拷贝，
      * 这意味着在所有被clone 的 channel 对象共享 EventLoopGroup 对象。这样做的原因在于一般情况被 clone 出来的 bootstrap 存活时间
      * 比较短。
+     *
      * @return
      */
     @Override

@@ -22,7 +22,12 @@ import org.junit.Test;
 import org.mockito.Mockito;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.junit.Assert.*;
 
@@ -192,6 +197,7 @@ public class CompleteChannelFutureTest {
         cfFetch.thenAccept((result) -> {
             System.out.println("price: " + result);
         });
+
         // 主线程不要立刻结束，否则CompletableFuture默认使用的线程池会立刻关闭:
         Thread.sleep(200);
 
@@ -223,4 +229,109 @@ public class CompleteChannelFutureTest {
     //    xxxAsync()：表示将异步在线程池中执行。
 
 
+    public static void main(String[] args) {
+
+        //获取所有完成结果——allOf
+        //public static CompletableFuture<Void> allOf(CompletableFuture<?>... cfs)
+        //allOf方法，当所有给定的任务完成后，返回一个全新的已完成CompletableFuture
+
+        CompletableFuture<Integer> future1 = CompletableFuture.supplyAsync(() -> {
+            try {
+                //使用sleep()模拟耗时操作
+                TimeUnit.SECONDS.sleep(2);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return 1;
+        });
+
+        CompletableFuture<Integer> future2 = CompletableFuture.supplyAsync(() -> {
+            return 2;
+        });
+        CompletableFuture.allOf(future1, future1);
+        // 输出3
+        System.out.println(future1.join()+future2.join());
+
+
+        //anyof
+        //获取率先完成的任务结果——anyOf
+        //仅等待Future集合种最快结束的任务完成（有可能因为他们试图通过不同的方式计算同一个值），并返回它的结果。
+        // 小贴士 ：如果最快完成的任务出现了异常，也会先返回异常，如果害怕出错可以加个exceptionally() 去处理一下可能发生的异常并设定默认返回值
+        //public static CompletableFuture<Object> anyOf(CompletableFuture<?>... cfs)
+        CompletableFuture<Integer> future0 = CompletableFuture.supplyAsync(() -> {
+            throw new NullPointerException();
+        });
+
+        CompletableFuture<Integer> future3 = CompletableFuture.supplyAsync(() -> {
+            try {
+                // 睡眠3s模拟延时
+                TimeUnit.SECONDS.sleep(3);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return 1;
+        });
+        CompletableFuture<Object> anyOf = CompletableFuture
+                .anyOf(future0, future2)
+                .exceptionally(error -> {
+                    error.printStackTrace();
+                    return 2;
+                });
+        System.out.println(anyOf.join());
+
+        CompletableFuture.supplyAsync(() -> 10)
+                .whenComplete((result, error) -> {
+                    System.out.println(result);
+                    error.printStackTrace();
+                })
+                .handle((result, error) -> {
+                    error.printStackTrace();
+                    return error;
+                })
+                .thenApply(Object::toString)
+                .thenApply(Integer::valueOf)
+                .thenAccept((param) -> System.out.println("done"));
+
+
+
+        long begin = System.currentTimeMillis();
+        // 自定义一个线程池
+        ExecutorService executorService = Executors.newFixedThreadPool(10);
+        // 循环创建10个CompletableFuture
+        List<CompletableFuture<Integer>> collect = IntStream.range(1, 10).mapToObj(i -> {
+            CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+                        // 在i=5的时候抛出一个NPE
+                        if (i == 5) {
+                            throw new NullPointerException();
+                        }
+                        try {
+                            // 每个依次睡眠1-9s，模拟线程耗时
+                            TimeUnit.SECONDS.sleep(i);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        System.out.println(i);
+                        return i;
+                    }, executorService)
+                    // 这里处理一下i=5时出现的NPE
+                    // 如果这里不处理异常，那么异常会在所有任务完成后抛出,小伙伴可自行测试
+                    .exceptionally(Error -> {
+                        try {
+                            TimeUnit.SECONDS.sleep(5);
+                            System.out.println(100);
+                            Error.printStackTrace();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+
+                        }
+                        return 100;
+                    });
+            return future;
+        }).collect(Collectors.toList());
+        // List列表转成CompletableFuture的Array数组,使其可以作为allOf()的参数
+        // 使用join()方法使得主线程阻塞，并等待所有并行线程完成
+        CompletableFuture.allOf(collect.toArray(new CompletableFuture[]{})).join();
+        System.out.println("最终耗时" + (System.currentTimeMillis() - begin) + "毫秒");
+        executorService.shutdown();
+    }
 }

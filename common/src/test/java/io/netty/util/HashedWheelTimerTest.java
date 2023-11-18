@@ -233,6 +233,8 @@ public class HashedWheelTimerTest {
     @Test
     public void testOverflow() throws InterruptedException  {
         final HashedWheelTimer timer = new HashedWheelTimer();
+        final HashedWheelTimer timer2 = new HashedWheelTimer();
+        final HashedWheelTimer timer3 = new HashedWheelTimer();
         final CountDownLatch latch = new CountDownLatch(1);
         Timeout timeout = timer.newTimeout(new TimerTask() {
             @Override
@@ -243,6 +245,41 @@ public class HashedWheelTimerTest {
         assertFalse(latch.await(1, TimeUnit.SECONDS));
         timeout.cancel();
         timer.stop();
+    }
+
+    @Test
+    public void testSchedule() throws InterruptedException {
+        final CountDownLatch countDownLatch = new CountDownLatch(3);
+        // 构造一个 Timer 实例
+
+        HashedWheelTimer timer = new HashedWheelTimer();
+
+// 提交一个任务，让它在 5s 后执行
+        Timeout timeout1 = timer.newTimeout(new TimerTask() {
+            @Override
+            public void run(Timeout timeout) {
+                System.out.println("5s 后执行该任务");
+            }
+        }, 5, TimeUnit.SECONDS);
+
+// 再提交一个任务，让它在 10s 后执行
+        Timeout timeout2 = timer.newTimeout(new TimerTask() {
+            @Override
+            public void run(Timeout timeout) {
+                System.out.println("10s 后执行该任务");
+            }
+        }, 10, TimeUnit.SECONDS);
+
+// 取消掉那个 5s 后执行的任务
+        if (!timeout1.isExpired()) {
+            timeout1.cancel();
+        }
+
+// 原来那个 5s 后执行的任务，已经取消了。这里我们反悔了，我们要让这个任务在 3s 后执行
+// 我们说过 timeout 持有上、下层的实例，所以下面的 timer 也可以写成 timeout1.timer()
+        timer.newTimeout(timeout1.task(), 3, TimeUnit.SECONDS);
+        countDownLatch.await();
+
     }
 
     private static TimerTask createNoOpTimerTask() {

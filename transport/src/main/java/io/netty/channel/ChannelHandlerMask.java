@@ -85,6 +85,7 @@ final class ChannelHandlerMask {
         return mask;
     }
 
+    // InboundChannel 和 OutboundChannel 中的所有方法标记。
     /**
      * Calculate the {@code executionMask}.
      */

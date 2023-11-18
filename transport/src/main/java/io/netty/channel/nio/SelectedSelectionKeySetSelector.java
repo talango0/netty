@@ -70,6 +70,7 @@ final class SelectedSelectionKeySetSelector extends Selector {
 
     @Override
     public Selector wakeup() {
+        // NioEventLoop 的 wakeup
         return delegate.wakeup();
     }
 

@@ -50,9 +50,9 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
 
     @Override
     public void channelRead0(ChannelHandlerContext ctx, Object msg) {
-        if (msg instanceof FullHttpRequest) {
+        if (msg instanceof FullHttpRequest) { // 传统的HTTP接入
             handleHttpRequest(ctx, (FullHttpRequest) msg);
-        } else if (msg instanceof WebSocketFrame) {
+        } else if (msg instanceof WebSocketFrame) { // Websocket接入
             handleWebSocketFrame(ctx, (WebSocketFrame) msg);
         }
     }
@@ -64,7 +64,7 @@ public class WebSocketServerHandler extends SimpleChannelInboundHandler<Object> 
 
     private void handleHttpRequest(ChannelHandlerContext ctx, FullHttpRequest req) {
         // Handle a bad request.
-        if (!req.decoderResult().isSuccess()) {
+        if (!req.decoderResult().isSuccess()) { // 解码失败返回异常
             sendHttpResponse(ctx, req, new DefaultFullHttpResponse(req.protocolVersion(), BAD_REQUEST,
                                                                    ctx.alloc().buffer(0)));
             return;
